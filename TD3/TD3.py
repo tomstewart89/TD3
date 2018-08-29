@@ -11,34 +11,34 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Actor(nn.Module):
-	def __init__(self, state_dim, action_dim, max_action):
+	def __init__(self, state_space, action_space):
 		super(Actor, self).__init__()
 
-		self.l1 = nn.Linear(state_dim, 400)
+		self.l1 = nn.Linear(state_space.shape[0], 400)
 		self.l2 = nn.Linear(400, 300)
-		self.l3 = nn.Linear(300, action_dim)
-		
-		self.max_action = torch.Tensor(max_action)
+		self.l3 = nn.Linear(300, action_space.shape[0])
 
+		self.max_action = torch.Tensor(action_space.high)
+		self.min_action = torch.Tensor(action_space.low)
 
 	def forward(self, x):
 		x = F.relu(self.l1(x))
 		x = F.relu(self.l2(x))
-		x = self.max_action * torch.tanh(self.l3(x)) 
+		x = (self.max_action - self.min_action) * torch.sigmoid(self.l3(x)) + self.min_action
 		return x
 
 
 class Critic(nn.Module):
-	def __init__(self, state_dim, action_dim):
+	def __init__(self, state_space, action_space):
 		super(Critic, self).__init__()
 
 		# Q1 architecture
-		self.l1 = nn.Linear(state_dim + action_dim, 400)
+		self.l1 = nn.Linear(state_space.shape[0] + action_space.shape[0], 400)
 		self.l2 = nn.Linear(400, 300)
 		self.l3 = nn.Linear(300, 1)
 
 		# Q2 architecture
-		self.l4 = nn.Linear(state_dim + action_dim, 400)
+		self.l4 = nn.Linear(state_space.shape[0] + action_space.shape[0], 400)
 		self.l5 = nn.Linear(400, 300)
 		self.l6 = nn.Linear(300, 1)
 
@@ -66,18 +66,20 @@ class Critic(nn.Module):
 
 
 class TD3(object):
-	def __init__(self, state_dim, action_dim, max_action):
-		self.actor = Actor(state_dim, action_dim, max_action).to(device)
-		self.actor_target = Actor(state_dim, action_dim, max_action).to(device)
+	def __init__(self, state_space, action_space, actor_cls=Actor, critic_cls=Critic):
+
+		self.actor = actor_cls(state_space, action_space).to(device)
+		self.actor_target = actor_cls(state_space, action_space).to(device)
 		self.actor_target.load_state_dict(self.actor.state_dict())
 		self.actor_optimizer = torch.optim.Adam(self.actor.parameters())
 
-		self.critic = Critic(state_dim, action_dim).to(device)
-		self.critic_target = Critic(state_dim, action_dim).to(device)
+		self.critic = critic_cls(state_space, action_space).to(device)
+		self.critic_target = critic_cls(state_space, action_space).to(device)
 		self.critic_target.load_state_dict(self.critic.state_dict())
 		self.critic_optimizer = torch.optim.Adam(self.critic.parameters())		
 
-		self.max_action = max_action
+		self.action_space = action_space
+		self.state_space = state_space
 
 
 	def select_action(self, state):
@@ -100,8 +102,8 @@ class TD3(object):
 			# Select action according to policy and add clipped noise 
 			noise = torch.FloatTensor(u).data.normal_(0, policy_noise).to(device)
 			noise = noise.clamp(-noise_clip, noise_clip)
-			next_action = (self.actor_target(next_state) + noise).clamp(-self.max_action, self.max_action)
-			next_action = next_action.clamp(-self.max_action, self.max_action)
+			next_action = (self.actor_target(next_state) + noise).clamp(self.action_space.low, self.action_space.high)
+			next_action = next_action.clamp(self.action_space.low, self.action_space.high)
 
 			# Compute the target Q value
 			target_Q1, target_Q2 = self.critic_target(next_state, next_action)

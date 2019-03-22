@@ -76,7 +76,7 @@ class TD3(object):
 		self.critic = critic_cls(state_space, action_space).to(device)
 		self.critic_target = critic_cls(state_space, action_space).to(device)
 		self.critic_target.load_state_dict(self.critic.state_dict())
-		self.critic_optimizer = torch.optim.Adam(self.critic.parameters())		
+		self.critic_optimizer = torch.optim.Adam(self.critic.parameters())
 
 		self.action_space = action_space
 		self.state_space = state_space
@@ -102,8 +102,7 @@ class TD3(object):
 			# Select action according to policy and add clipped noise 
 			noise = torch.FloatTensor(u).data.normal_(0, policy_noise).to(device)
 			noise = noise.clamp(-noise_clip, noise_clip)
-			next_action = (self.actor_target(next_state) + noise).clamp(self.action_space.low, self.action_space.high)
-			next_action = next_action.clamp(self.action_space.low, self.action_space.high)
+			next_action = (self.actor_target(next_state) + noise).clamp(-self.max_action, self.max_action)
 
 			# Compute the target Q value
 			target_Q1, target_Q2 = self.critic_target(next_state, next_action)
